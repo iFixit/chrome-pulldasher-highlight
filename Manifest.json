@@ -3,7 +3,7 @@
    "description": "",
    "version": "0.1",
    "background": {
-      "scripts": ["background.js"]
+      "scripts": ["config.js", "background.js"]
    },
    "permissions": [
       "*://pulldasher.cominor.com/*",
@@ -11,7 +11,7 @@
    ],
    "content_scripts": [{
       "matches": ["*://pulldasher.cominor.com/*"],
-      "js": ["content.js"],
+      "js": ["config.js", "content.js"],
       "run_at": "document_end"
    }],
    "manifest_version": 2

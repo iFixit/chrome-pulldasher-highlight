@@ -1,68 +1,72 @@
-function sendToPulldasher(data) {
-	chrome.tabs.query({
-		url: '*://pulldasher.cominor.com/*'
-	}, function(tabs) {
-		tabs.forEach(function(tab) {
-			chrome.tabs.sendMessage(tab.id, data);
-		});
-	});
+(function() {
+
+function isDomain(url, domain) {
+   return url.startsWith('http://' + domain + '/')
+       || url.startsWith('https://' + domain + '/')
+       || url == 'http://' + domain
+       || url == 'https://' + domain;
 }
 
-function getGithubUrl(tab) {
-	if (!tab.url || !tab.url.startsWith('https://github.com/')) {
-		return null;
-	}
-
-	tab.url = tab.url.replace(/(pull\/\d+)[\/#].*$/, '$1');
-	return tab;
+// send `message` to all tabs on domain config.domainTo
+function sendMessageToAll(message) {
+   chrome.tabs.query({
+      url: '*://' + config.domainTo + '/*'
+   }, function(tabs) {
+      if (tabs && tabs.length) {
+         tabs.forEach(function(tab) {
+            chrome.tabs.sendMessage(tab.id, message);
+         });
+      }
+   });
 }
 
-function sendUrls(method, tabs) {
-	tabs = tabs.map(getGithubUrl).filter(function(tab) {
-		return tab.url;
-	});
-
-	if (tabs.length > 0) {
-		sendToPulldasher({
-			type: 'pulldasher-' + method,
-			tabs: tabs
-		});
-	}
+function createMessageFromTabs(method, tabs) {
+   return {
+      type: config.prefix + method,
+      tabs: tabs.map(function(tab) {
+         // filter out tab info they don't need to know
+         return {
+            id: tab.id,
+            url: method != 'remove' ? tab.url : null
+         };
+      })
+   };
 }
 
-var tabIdToUrl = {};
+function remove(tabId) {
+   sendMessageToAll(createMessageFromTabs('remove', [{id: tabId}]));
+}
 
 function update(tabId, changeInfo, tab) {
-	if (changeInfo.url) {
-		if (tabIdToUrl[tab.id]) {
-			sendUrls('remove', [{id: tabId, url: tabIdToUrl[tab.id]}]);
-		}
-		tabIdToUrl[tab.id] = tab.url;
-		sendUrls('create', [{id: tabId, url: tabIdToUrl[tab.id]}]);
-	}
+   // if a url changed, send a message to remove its old information
+   if (changeInfo.url) {
+      remove(tabId);
 
-	if(tab.url) {
-		var url = tab.url;
-		if (url.startsWith('https://pulldasher.cominor.com')
-		 || url.startsWith('http://pulldasher.cominor.com')) {
-		 	setTimeout(function() {
-		 		chrome.tabs.query({url: 'https://github.com/*'}, function(tabs) {
-					sendUrls('create', tabs.map(function(tab) {
-						tabIdToUrl[tab.id] = tab.url;
-						return {id: tab.id, url: tab.url};
-					}));
-				});
-		 	}, 0);
-		}
-	}
+      // if the new url is on domainAbout, send a message about it
+      if (tab.url && isDomain(tab.url, config.domainAbout)) {
+         sendMessageToAll(createMessageFromTabs('create', [tab]));
+      }
+   }
+
+   // if a tab goes to the domainTo domain, send it all of the initial
+   // information about tabs that are already open
+   if (tab.url && isDomain(tab.url, config.domainTo)) {
+      chrome.tabs.query({
+         url: '*://' + config.domainAbout + '/*'
+      }, function(tabs) {
+         if (tabs && tabs.length) {
+            chrome.tabs.sendMessage(tab.id,
+             createMessageFromTabs('create', tabs));
+         }
+      });
+   }
 }
 
-chrome.tabs.onUpdated.addListener(update);
-
 chrome.tabs.onCreated.addListener(function(tab) {
-	update(tab.tabId, {}, tab);
+   // use the same handler as onUpdated, but adapt to its arugment list
+   update(tab.tabId, {}, tab);
 });
+chrome.tabs.onUpdated.addListener(update);
+chrome.tabs.onRemoved.addListener(remove);
 
-chrome.tabs.onRemoved.addListener(function(tabId) {
-	sendUrls('remove', [{id: tabId, url: tabIdToUrl[tabId]}]);
-});
+})();

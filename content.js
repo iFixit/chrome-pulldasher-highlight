@@ -1,41 +1,60 @@
-var constStyle = '{background-color:#A9DBFF}';
+(function() {
 
-var styleEl = document.createElement('style');
-document.head.appendChild(styleEl);
-var styleSheet = styleEl.sheet;
+// create a <style> tag that we can add rules to. this is useful because the
+// these styles will always apply, even if the page manipulates its dom.
+var styleElement = document.createElement('style');
+document.head.appendChild(styleElement);
+var styleSheet = styleElement.sheet;
 
+// keep track of which tabs map to which urls
+var tabIdToUrl = {};
+// mirror of cssRules that we can do indexOf on
 var rules = [];
-var tabs = {};
 
-function createRule(tab, rule) {
-   if(tabs[tab.id+'_'+tab.url]) {
+function createRule(tab) {
+   // don't add duplicate rules
+   if (tabIdToUrl[tab.id] == tab.url) {
       return;
    }
 
-   rules.push(tab.id+'_'+tab.url);
-   styleSheet.insertRule(rule, styleSheet.cssRules.length);
-   tabs[tab.id+'_'+tab.url] = true;
+   var style = config.getStyleFromUrl(tab.url);
+
+   tabIdToUrl[tab.id] = tab.url;
+   styleSheet.insertRule(style, styleSheet.cssRules.length);
+   rules.push(style);
 }
 
-function removeRule(tab, rule) {
-   var index = rules.indexOf(tab.id+'_'+tab.url);
+function removeRule(tab) {
+   if (!tabIdToUrl[tab.id]) {
+      return;
+   }
+
+   // get its old url and use it to find the style rule
+   var url = tabIdToUrl[tab.id];
+   var style = config.getStyleFromUrl(url);
+   var index = rules.indexOf(style);
+
    if (index == -1) {
       return;
    }
 
-   delete tabs[tab.id+'_'+tab.url];
-   rules.splice(index, 1);
+   delete tabIdToUrl[tab.id];
    styleSheet.deleteRule(index);
+   rules.splice(index, 1);
+
+   // if multiple tabs create the same style rule, this only removes one of
+   // them, so that all tabs have to be closed before the style is gone.
 }
 
 chrome.runtime.onMessage.addListener(function(request) {
-   if (request && request.type && request.type.startsWith
-    && request.type.startsWith('pulldasher-')) {
-
-      var method = request.type == 'pulldasher-remove' ? removeRule : createRule;
-
-      request.tabs.forEach(function(tab) {
-         method(tab, '.pull[href="' + tab.url + '"]' + constStyle);
-      });
+   switch (request.type) {
+   case config.prefix + 'create':
+      request.tabs.forEach(createRule);
+      break;
+   case config.prefix + 'remove':
+      request.tabs.forEach(removeRule);
+      break;
    }
 });
+
+})();
